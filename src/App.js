@@ -36,6 +36,89 @@ class MarkdownErrorBoundary extends Component {
   }
 }
 
+// Code Block with animation
+function AnimatedCodeBlock({ codeString, language, ...props }) {
+  const [isAnimating, setIsAnimating] = useState(false);
+  const codeBlockRef = useRef(null);
+  const prevCodeStringRef = useRef('');
+  const animationTimeoutRef = useRef(null);
+  const stableTimeoutRef = useRef(null);
+  const hasAnimatedRef = useRef(false); // 애니메이션이 이미 실행되었는지 추적
+  const lastStableCodeRef = useRef(''); // 마지막으로 안정화된 코드
+
+  useEffect(() => {
+    // 이전 타임아웃 정리
+    if (animationTimeoutRef.current) {
+      clearTimeout(animationTimeoutRef.current);
+    }
+    if (stableTimeoutRef.current) {
+      clearTimeout(stableTimeoutRef.current);
+    }
+
+    // 코드가 변경되었을 때
+    if (codeString && prevCodeStringRef.current !== codeString) {
+      // 이전 코드가 비어있었고 현재 코드가 있으면 새로운 코드 블록 시작
+      if (!prevCodeStringRef.current) {
+        hasAnimatedRef.current = false;
+        lastStableCodeRef.current = '';
+      }
+
+      // 코드가 안정화될 때까지 대기 (1000ms 동안 변경되지 않으면 완성된 것으로 간주)
+      // 그리고 아직 애니메이션이 실행되지 않았을 때만
+      if (!hasAnimatedRef.current) {
+        const currentCode = codeString;
+        stableTimeoutRef.current = setTimeout(() => {
+          // 코드가 여전히 동일한지 확인 (완성된 것으로 간주)
+          if (currentCode === codeString && currentCode.length > 0 && !hasAnimatedRef.current) {
+            // 마지막 안정화된 코드와 다를 때만 애니메이션 실행
+            if (currentCode !== lastStableCodeRef.current) {
+              // 애니메이션 트리거
+              setIsAnimating(true);
+              hasAnimatedRef.current = true; // 애니메이션 실행 표시
+              lastStableCodeRef.current = currentCode;
+              animationTimeoutRef.current = setTimeout(() => {
+                setIsAnimating(false);
+              }, 600); // 애니메이션 시간
+            }
+          }
+        }, 1000); // 코드 안정화 대기 시간
+      }
+    }
+
+    prevCodeStringRef.current = codeString;
+
+    // 클린업
+    return () => {
+      if (animationTimeoutRef.current) {
+        clearTimeout(animationTimeoutRef.current);
+      }
+      if (stableTimeoutRef.current) {
+        clearTimeout(stableTimeoutRef.current);
+      }
+    };
+  }, [codeString]);
+
+  return (
+    <div
+      ref={codeBlockRef}
+      className={`code-block-wrapper ${isAnimating ? 'code-block-animating' : ''}`}
+    >
+      <div className="code-block-header">
+        <span className="code-block-language">{language}</span>
+      </div>
+      <SyntaxHighlighter
+        style={vscDarkPlus}
+        language={language}
+        PreTag="div"
+        className="code-block"
+        {...props}
+      >
+        {codeString}
+      </SyntaxHighlighter>
+    </div>
+  );
+}
+
 // Safe Markdown component with error handling
 function SafeMarkdown({ content }) {
   return (
@@ -48,20 +131,11 @@ function SafeMarkdown({ content }) {
             const codeString = String(children).replace(/\n$/, '');
 
             return !inline && match ? (
-              <div className="code-block-wrapper">
-                <div className="code-block-header">
-                  <span className="code-block-language">{match[1]}</span>
-                </div>
-                <SyntaxHighlighter
-                  style={vscDarkPlus}
-                  language={match[1]}
-                  PreTag="div"
-                  className="code-block"
-                  {...props}
-                >
-                  {codeString}
-                </SyntaxHighlighter>
-              </div>
+              <AnimatedCodeBlock
+                codeString={codeString}
+                language={match[1]}
+                {...props}
+              />
             ) : (
               <code className="inline-code" {...props}>
                 {children}
