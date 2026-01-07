@@ -1,10 +1,83 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { SendHorizontal, Settings, Trash2, Loader2, MessageSquare, ChevronDown, X } from 'lucide-react';
+import React, { useState, useRef, useEffect, Component } from 'react';
+import { SendHorizontal, Moon, Sun, Trash2, Loader2, MessageSquare } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import './App.css';
+
+// Error Boundary for Markdown rendering
+class MarkdownErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('Markdown rendering error:', error, errorInfo);
+  }
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.content !== this.props.content) {
+      this.setState({ hasError: false });
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return <div style={{ whiteSpace: 'pre-wrap' }}>{this.props.content}</div>;
+    }
+
+    return this.props.children;
+  }
+}
+
+// Safe Markdown component with error handling
+function SafeMarkdown({ content }) {
+  return (
+    <MarkdownErrorBoundary content={content}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          code({ node, inline, className, children, ...props }) {
+            const match = /language-(\w+)/.exec(className || '');
+            const codeString = String(children).replace(/\n$/, '');
+
+            return !inline && match ? (
+              <div className="code-block-wrapper">
+                <div className="code-block-header">
+                  <span className="code-block-language">{match[1]}</span>
+                </div>
+                <SyntaxHighlighter
+                  style={vscDarkPlus}
+                  language={match[1]}
+                  PreTag="div"
+                  className="code-block"
+                  {...props}
+                >
+                  {codeString}
+                </SyntaxHighlighter>
+              </div>
+            ) : (
+              <code className="inline-code" {...props}>
+                {children}
+              </code>
+            );
+          },
+          pre({ children }) {
+            return <>{children}</>;
+          },
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </MarkdownErrorBoundary>
+  );
+}
 
 // Apple-inspired modern chat interface
 export default function App() {
@@ -12,11 +85,24 @@ export default function App() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [apiUrl, setApiUrl] = useState('http://localhost:1234/v1/chat/completions');
-  const [showSettings, setShowSettings] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const saved = localStorage.getItem('darkMode');
+    return saved ? JSON.parse(saved) : false;
+  });
   const [model, setModel] = useState('gemma-3-4b-it-qat');
   const [systemMessage, setSystemMessage] = useState('');
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
+
+  // 다크모드 적용
+  useEffect(() => {
+    localStorage.setItem('darkMode', JSON.stringify(isDarkMode));
+    if (isDarkMode) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+    }
+  }, [isDarkMode]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -186,6 +272,10 @@ export default function App() {
     setModel(model || 'gemma-3-4b-it-qat'); // 모델명 유지
   };
 
+  const toggleDarkMode = () => {
+    setIsDarkMode(!isDarkMode);
+  };
+
   return (
     <div className="app">
 
@@ -204,50 +294,14 @@ export default function App() {
               <Trash2 size={18} />
             </button>
             <button
-              className={`icon-button ${showSettings ? 'active' : ''}`}
-              onClick={() => setShowSettings(!showSettings)}
-              title="설정"
+              className="icon-button"
+              onClick={toggleDarkMode}
+              title={isDarkMode ? "라이트 모드" : "다크 모드"}
             >
-              <Settings size={18} />
+              {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
             </button>
           </div>
         </header>
-
-        {showSettings && (
-          <div className="settings-panel">
-            <div className="settings-row">
-              <div className="settings-field">
-                <label>API 주소</label>
-                <input
-                  type="text"
-                  value={apiUrl}
-                  onChange={(e) => setApiUrl(e.target.value)}
-                  placeholder="http://localhost:1234/v1/chat/completions"
-                />
-              </div>
-              <div className="settings-field">
-                <label>모델명</label>
-                <input
-                  type="text"
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  placeholder="gemma-3-4b-it-qat"
-                />
-              </div>
-            </div>
-            <div className="settings-row">
-              <div className="settings-field">
-                <label>시스템 메시지 (선택사항)</label>
-                <input
-                  type="text"
-                  value={systemMessage}
-                  onChange={(e) => setSystemMessage(e.target.value)}
-                  placeholder="예: Always answer in rhymes."
-                />
-              </div>
-            </div>
-          </div>
-        )}
 
         <div className="messages-container">
           {messages.length === 0 ? (
@@ -266,41 +320,7 @@ export default function App() {
               >
                 <div className="message-content">
                   {message.role === 'assistant' ? (
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        code({ node, inline, className, children, ...props }) {
-                          const match = /language-(\w+)/.exec(className || '');
-                          const codeString = String(children).replace(/\n$/, '');
-
-                          return !inline && match ? (
-                            <div className="code-block-wrapper">
-                              <div className="code-block-header">
-                                <span className="code-block-language">{match[1]}</span>
-                              </div>
-                              <SyntaxHighlighter
-                                style={vscDarkPlus}
-                                language={match[1]}
-                                PreTag="div"
-                                className="code-block"
-                                {...props}
-                              >
-                                {codeString}
-                              </SyntaxHighlighter>
-                            </div>
-                          ) : (
-                            <code className="inline-code" {...props}>
-                              {children}
-                            </code>
-                          );
-                        },
-                        pre({ children }) {
-                          return <>{children}</>;
-                        },
-                      }}
-                    >
-                      {message.content}
-                    </ReactMarkdown>
+                    <SafeMarkdown content={message.content} />
                   ) : (
                     message.content
                   )}
